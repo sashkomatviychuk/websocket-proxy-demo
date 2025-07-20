@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Proxy Demo</title>
+  </head>
+  <body>
+    <h1>WebSocket Proxy Demo</h1>
+    <textarea id="messageInput" placeholder="Type your message here..."></textarea>
+    <button id="sendButton">Send</button>
+    <h2>Messages</h2>
+    <ul id="messages"></ul>
+
+    <script>
+      const ws = new WebSocket(`ws://${window.location.host}`);
+
+      const messageInput = document.getElementById('messageInput');
+      const sendButton = document.getElementById('sendButton');
+      const messages = document.getElementById('messages');
+
+      ws.onmessage = (event) => {
+        const li = document.createElement('li');
+        li.textContent = `Received: ${event.data}`;
+        messages.appendChild(li);
+      };
+
+      sendButton.addEventListener('click', () => {
+        const message = messageInput.value;
+        ws.send(message);
+        const li = document.createElement('li');
+        li.textContent = `Sent: ${message}`;
+        messages.appendChild(li);
+        messageInput.value = '';
+      });
+    </script>
+  </body>
+</html>
