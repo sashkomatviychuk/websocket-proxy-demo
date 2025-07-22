@@ -1,5 +1,6 @@
+// @ts-check
 import express from 'express';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import dotenv from 'dotenv';
 import { createClient } from 'redis';
 
@@ -14,55 +15,68 @@ app.use(express.static('public'));
 
 const wss = new WebSocketServer({ noServer: true });
 
-// Initialize Redis clients
+// Store connected clients
+const clients = new Map();
+
+// Initialize Redis pub/sub clients
 const redisPublisher = createClient();
 const redisSubscriber = createClient();
 
 await redisPublisher.connect();
 await redisSubscriber.connect();
 
+const thirdPartySocket = await createExternalClient();
+
 // Handle WebSocket connections
 wss.on('connection', async (clientSocket) => {
-  console.log('Client connected', wss.clients.size);
+  const userId = Math.random().toString(36).substring(2, 15); // Simulate user ID for the client
+  clients.set(userId, clientSocket);
 
-  const thirdPartySocket = await createExternalClient();
+  console.log('Client connected', userId);
 
   // Relay messages from the client to the third-party service via Redis
   clientSocket.on('message', (message) => {
     console.log('Message from client:', message.toString());
-    redisPublisher.publish('toThirdParty', message);
+    redisPublisher.publish('toThirdParty', JSON.stringify({ userId, message: message.toString() }));
   });
 
   clientSocket.on('close', () => {
     console.log('Client disconnected');
+    clients.delete(userId);
     thirdPartySocket.close();
   });
+});
 
-  // Subscribe to messages from the third-party service via Redis
-  redisSubscriber.subscribe('toClient', (message) => {
-    console.log('Message from third-party to client:', message);
+redisSubscriber.subscribe('toClient', (message) => {
+  const data = JSON.parse(message);
+  const clientSocket = clients.get(data.userId);
 
-    if (clientSocket && clientSocket.readyState === WebSocket.OPEN) {
-      clientSocket.send(message);
-    }
-  });
+  if (data.message === 'all') {
+    clients.forEach((socket) => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send('broadcasted message ' + data.message);
+      }
+    });
+    return;
+  }
 
-  // Relay messages from the third-party service to the client
-  thirdPartySocket.on('message', async (message) => {
-    console.log('Message from third-party service:', message.toString());
-    // clientSocket.send(message);
-    await redisPublisher.publish('toClient', message);
-  });
+  if (clientSocket && clientSocket.readyState === WebSocket.OPEN) {
+    clientSocket.send(message);
+  }
+});
 
-  thirdPartySocket.on('close', () => {
-    console.log('Third-party service disconnected');
-    clientSocket.close();
-  });
+// Relay messages from the third-party service to the client
+thirdPartySocket.on('message', async (message) => {
+  console.log('Message from third-party service:', message.toString());
+  await redisPublisher.publish('toClient', message);
+});
 
-  redisSubscriber.subscribe('toThirdParty', (message) => {
-    console.log('Message from client to third-party:', message);
-    thirdPartySocket.send(message);
-  });
+thirdPartySocket.on('close', () => {
+  console.log('Third-party service disconnected');
+});
+
+redisSubscriber.subscribe('toThirdParty', (message) => {
+  thirdPartySocket.send(message);
 });
 
 // Upgrade HTTP server to handle WebSocket connections
@@ -75,3 +89,5 @@ server.on('upgrade', (request, socket, head) => {
     wss.emit('connection', ws, request);
   });
 });
+
+// https://github.com/websockets/ws/tree/master/examples/express-session-parse
