@@ -1,7 +1,9 @@
 import express from 'express';
 import { WebSocketServer } from 'ws';
-import { WebSocket } from 'ws';
 import dotenv from 'dotenv';
+import { createClient } from 'redis';
+
+import { createExternalClient } from './external-client.mjs';
 
 dotenv.config();
 
@@ -12,22 +14,23 @@ app.use(express.static('public'));
 
 const wss = new WebSocketServer({ noServer: true });
 
+// Initialize Redis clients
+const redisPublisher = createClient();
+const redisSubscriber = createClient();
+
+await redisPublisher.connect();
+await redisSubscriber.connect();
+
 // Handle WebSocket connections
-wss.on('connection', (clientSocket) => {
-  console.log('Client connected');
+wss.on('connection', async (clientSocket) => {
+  console.log('Client connected', wss.clients.size);
 
-  const thirdPartySocket = new WebSocket('wss://echo.websocket.org');
+  const thirdPartySocket = await createExternalClient();
 
-  // Relay messages from the client to the third-party service
+  // Relay messages from the client to the third-party service via Redis
   clientSocket.on('message', (message) => {
     console.log('Message from client:', message.toString());
-    thirdPartySocket.send(message);
-  });
-
-  // Relay messages from the third-party service to the client
-  thirdPartySocket.on('message', (message) => {
-    console.log('Message from third-party service:', message.toString());
-    clientSocket.send(message);
+    redisPublisher.publish('toThirdParty', message);
   });
 
   clientSocket.on('close', () => {
@@ -35,9 +38,30 @@ wss.on('connection', (clientSocket) => {
     thirdPartySocket.close();
   });
 
+  // Subscribe to messages from the third-party service via Redis
+  redisSubscriber.subscribe('toClient', (message) => {
+    console.log('Message from third-party to client:', message);
+
+    if (clientSocket && clientSocket.readyState === WebSocket.OPEN) {
+      clientSocket.send(message);
+    }
+  });
+
+  // Relay messages from the third-party service to the client
+  thirdPartySocket.on('message', async (message) => {
+    console.log('Message from third-party service:', message.toString());
+    // clientSocket.send(message);
+    await redisPublisher.publish('toClient', message);
+  });
+
   thirdPartySocket.on('close', () => {
     console.log('Third-party service disconnected');
     clientSocket.close();
+  });
+
+  redisSubscriber.subscribe('toThirdParty', (message) => {
+    console.log('Message from client to third-party:', message);
+    thirdPartySocket.send(message);
   });
 });
 
