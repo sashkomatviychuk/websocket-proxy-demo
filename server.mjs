@@ -1,65 +1,57 @@
 // @ts-check
 import express from 'express';
-import { WebSocketServer, WebSocket } from 'ws';
+import http from 'http';
+import { WebSocket } from 'ws';
 import dotenv from 'dotenv';
 import { createClient } from 'redis';
-import { createExternalClient } from './external-client.mjs';
+import { setupEchoServerConnection } from './setup-echo-ws.mjs';
+import { createWsApp } from './ws-app.mjs';
 
 dotenv.config();
 
+const pub = createClient();
+const sub = pub.duplicate();
+
+await pub.connect();
+await sub.connect();
+
+const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
-// Initialize Redis clients
-const redisPublisher = createClient();
-const redisSubscriber = createClient();
-
-// Initialize WebSocket server and Express app
-const wss = new WebSocketServer({ noServer: true });
-const app = express();
-
-// Store connected clients
 const clients = new Map();
 
-// Utility function to safely send messages to WebSocket clients
-const sendMessage = (socket, message) => {
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    socket.send(message);
-  }
-};
+app.use(express.static('public'));
 
-// Handle WebSocket connections
-const handleWebSocketConnection = async (clientSocket) => {
-  const userId = Math.random().toString(36).substring(2, 15); // Generate a unique user ID
-  clients.set(userId, clientSocket);
+createWsApp(server, ({ ws, req, wss }) => {
+  const userId = Math.random().toString(36).substring(2, 15);
 
   console.log('Client connected:', userId);
 
-  clientSocket.on('message', (message) => handleClientMessage(userId, message));
-  clientSocket.on('close', () => handleClientDisconnection(userId));
-};
+  clients.set(userId, ws);
 
-// Handle messages from WebSocket clients
-const handleClientMessage = (userId, message) => {
-  console.log('Message from client:', message.toString());
-  redisPublisher.publish('toThirdParty', JSON.stringify({ userId, message: message.toString() }));
-};
+  ws.on('message', handleWsMessage({ userId, pub, ws, wss }));
+  ws.on('close', () => handleWsDisconnect({ userId }));
+});
 
-// Handle client disconnection
-const handleClientDisconnection = (userId) => {
-  console.log('Client disconnected:', userId);
-  clients.delete(userId);
-};
+function handleWsMessage({ userId, pub, ws, wss }) {
+  return async (message) => {
+    console.log('Message from client:', message.toString());
 
-const parseJson = (message) => {
-  try {
-    return JSON.parse(message);
-  } catch {
-    return null;
-  }
-};
+    const payload = JSON.stringify({ userId, message: message.toString() });
 
-// Handle messages from Redis to WebSocket clients
-const handleRedisToClientMessage = (message) => {
+    pub.publish('external:bus', payload);
+  };
+}
+
+function handleWsDisconnect({ userId }) {
+  return async () => {
+    console.log('Client disconnected:', userId);
+    // Additional cleanup if necessary
+  };
+}
+
+sub.subscribe('client:bus', (message) => {
   const data = parseJson(message);
 
   if (!data || !data.userId) {
@@ -76,57 +68,25 @@ const handleRedisToClientMessage = (message) => {
   if (clientSocket) {
     sendMessage(clientSocket, message);
   }
-};
+});
 
-// Relay messages from the third-party service to Redis
-const handleThirdPartyMessage = async (message) => {
-  console.log('Message from third-party service:', message.toString());
-  await redisPublisher.publish('toClient', message);
-};
-
-// Initialize third-party WebSocket client
-const initializeThirdPartySocket = async () => {
-  const thirdPartySocket = await createExternalClient();
-
-  thirdPartySocket.on('message', handleThirdPartyMessage);
-  thirdPartySocket.on('close', () => console.log('Third-party service disconnected'));
-
-  redisSubscriber.subscribe('toThirdParty', (message) => thirdPartySocket.send(message));
-
-  return thirdPartySocket;
-};
-
-// Setup WebSocket server
-const setupWebSocketServer = () => {
-  wss.on('connection', handleWebSocketConnection);
-
-  app.on('upgrade', (request, socket, head) => {
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request);
-    });
-  });
-};
-
-// Start the server
-const startServer = async () => {
-  try {
-    await Promise.all([redisPublisher.connect(), redisSubscriber.connect()]);
-
-    redisSubscriber.subscribe('toClient', handleRedisToClientMessage);
-
-    await initializeThirdPartySocket();
-
-    setupWebSocketServer();
-
-    app.use(express.static('public'));
-
-    app.listen(PORT, () => {
-      console.log(`Server is running on http://localhost:${PORT}`);
-    });
-  } catch (error) {
-    console.error('Error starting server:', error);
-    process.exit(1);
+// Utility function to safely send messages to WebSocket clients
+const sendMessage = (socket, message) => {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(message);
   }
 };
 
-startServer();
+const parseJson = (message) => {
+  try {
+    return JSON.parse(message);
+  } catch {
+    return null;
+  }
+};
+
+await setupEchoServerConnection({ pub, sub });
+
+server.listen(PORT, () => {
+  console.log(`Server listening on http://localhost:${PORT}`);
+});
