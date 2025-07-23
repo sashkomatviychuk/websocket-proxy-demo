@@ -2,12 +2,12 @@
 import express from 'express';
 import http from 'http';
 import dotenv from 'dotenv';
-import { setupEchoServerConnection } from './src/services/echo.service.mjs';
-import { createWsApp, handleWsMessage, handleWsDisconnect, handleOnClientMessage } from './src/services/ws.service.mjs';
+import { asValue } from 'awilix';
+import { createWsApp } from './src/services/ws.service.mjs';
 import { createUserId } from './src/services/user.service.mjs';
 import { shutdown } from './src/utils/shutdown.mjs';
 import { container } from './src/container.mjs';
-import { asValue } from 'awilix';
+import { CLIENT_CHANNEL } from './src/constants.mjs';
 
 dotenv.config();
 
@@ -31,15 +31,18 @@ const wss = createWsApp(server, ({ ws, req, wss }) => {
 
   ws.container = scope;
 
-  ws.on('message', handleWsMessage(scope));
-  ws.on('close', () => handleWsDisconnect(scope));
+  const handleWsMessage = scope.resolve('handleWsMessage');
+  const handleWsDisconnect = scope.resolve('handleWsDisconnect');
+
+  ws.on('message', handleWsMessage);
+  ws.on('close', handleWsDisconnect);
 });
 
-const { sub } = container.cradle;
+const { sub, handleOnClientMessage, setupEchoServerConnection } = container.cradle;
 
-sub.subscribe('client:bus', handleOnClientMessage(container));
+sub.subscribe(CLIENT_CHANNEL, handleOnClientMessage);
 
-await setupEchoServerConnection(container);
+await setupEchoServerConnection();
 
 server.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);

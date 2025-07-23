@@ -1,6 +1,8 @@
 // @ts-check
 import { WebSocketServer } from 'ws';
+
 import { parseJson } from '../utils/json.mjs';
+import { EXTERNAL_CHANNEL } from '../constants.mjs';
 
 /**
  * @returns {WebSocketServer}
@@ -17,26 +19,25 @@ export const createWsApp = (server, handler) => {
   return wss;
 };
 
-export const handleWsMessage = (scope) => {
+export const handleWsMessage = ({ userId, pub }) => {
   return async (message) => {
-    const { userId, pub } = scope.cradle;
-
     console.log('Message from client:', message.toString());
 
     const payload = JSON.stringify({ userId, message: message.toString() });
 
-    await pub.publish('external:bus', payload);
+    await pub.publish(EXTERNAL_CHANNEL, payload);
   };
 };
 
-export const handleWsDisconnect = (scope) => {
-  const { userId } = scope.cradle;
-  console.log('Client disconnected:', userId);
+export const handleWsDisconnect = ({ userId, clients }) => {
+  return () => {
+    clients.delete(userId);
+    console.log('Client disconnected:', userId);
+  };
 };
 
-export const handleOnClientMessage = (container) => {
+export const handleOnClientMessage = ({ clients }) => {
   return (message) => {
-    const { clients } = container.cradle;
     const data = parseJson(message);
 
     if (!data || !data.userId) {
