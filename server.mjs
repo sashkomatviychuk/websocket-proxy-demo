@@ -6,6 +6,7 @@ import { createClient } from 'redis';
 import { setupEchoServerConnection } from './src/services/echo.service.mjs';
 import { createWsApp, handleWsMessage, handleWsDisconnect, handleOnClientMessage } from './src/services/ws.service.mjs';
 import { createUserId } from './src/services/user.service.mjs';
+import { shutdown } from './src/utils/shutdown.mjs';
 
 dotenv.config();
 
@@ -23,7 +24,7 @@ const clients = new Map();
 
 app.use(express.static('public'));
 
-createWsApp(server, ({ ws, req, wss }) => {
+const wss = createWsApp(server, ({ ws, req, wss }) => {
   const userId = createUserId();
 
   console.log('Client connected:', userId);
@@ -41,3 +42,6 @@ await setupEchoServerConnection({ pub, sub });
 server.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
 });
+
+process.on('SIGINT', () => shutdown({ server, wss }));
+process.on('SIGTERM', () => shutdown({ server, wss }));
