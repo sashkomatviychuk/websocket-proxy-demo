@@ -17,7 +17,15 @@ const closeWebSocket = ({ wss }, callback) => {
   wss.close(callback);
 };
 
+let isShuttingDown = false;
+
 export const shutdown = ({ server, wss }) => {
+  if (isShuttingDown) {
+    return;
+  }
+
+  isShuttingDown = true;
+
   console.log('\nShutting down gracefully...');
 
   // Stop accepting new HTTP connections
