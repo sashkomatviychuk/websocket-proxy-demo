@@ -17,24 +17,26 @@ export const createWsApp = (server, handler) => {
   return wss;
 };
 
-export const handleWsMessage = ({ userId, pub, ws, wss }) => {
+export const handleWsMessage = (scope) => {
   return async (message) => {
+    const { userId, pub } = scope.cradle;
+
     console.log('Message from client:', message.toString());
 
     const payload = JSON.stringify({ userId, message: message.toString() });
 
-    pub.publish('external:bus', payload);
+    await pub.publish('external:bus', payload);
   };
 };
 
-export const handleWsDisconnect = ({ userId }) => {
-  return async () => {
-    console.log('Client disconnected:', userId);
-  };
+export const handleWsDisconnect = (scope) => {
+  const { userId } = scope.cradle;
+  console.log('Client disconnected:', userId);
 };
 
-export const handleOnClientMessage = ({ clients }) => {
+export const handleOnClientMessage = (container) => {
   return (message) => {
+    const { clients } = container.cradle;
     const data = parseJson(message);
 
     if (!data || !data.userId) {

@@ -17,7 +17,8 @@ const createExternalClient = () => {
   });
 };
 
-export const setupEchoServerConnection = async ({ pub, sub }) => {
+export const setupEchoServerConnection = async (container) => {
+  const { pub, sub } = container.cradle;
   const thirdPartySocket = await createExternalClient();
 
   if (!thirdPartySocket) {
@@ -25,7 +26,9 @@ export const setupEchoServerConnection = async ({ pub, sub }) => {
     return;
   }
 
-  thirdPartySocket.on('message', (message) => pub.publish('client:bus', message));
+  thirdPartySocket.on('message', (message) => {
+    pub.publish('client:bus', message);
+  });
   thirdPartySocket.on('close', () => console.log('Third-party service disconnected'));
 
   sub.subscribe('external:bus', (message) => thirdPartySocket.send(message));

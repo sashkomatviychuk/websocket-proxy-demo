@@ -2,42 +2,44 @@
 import express from 'express';
 import http from 'http';
 import dotenv from 'dotenv';
-import { createClient } from 'redis';
 import { setupEchoServerConnection } from './src/services/echo.service.mjs';
 import { createWsApp, handleWsMessage, handleWsDisconnect, handleOnClientMessage } from './src/services/ws.service.mjs';
 import { createUserId } from './src/services/user.service.mjs';
 import { shutdown } from './src/utils/shutdown.mjs';
+import { container } from './src/container.mjs';
+import { asValue } from 'awilix';
 
 dotenv.config();
-
-const pub = createClient();
-const sub = pub.duplicate();
-
-await pub.connect();
-await sub.connect();
 
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
-const clients = new Map();
-
 app.use(express.static('public'));
 
 const wss = createWsApp(server, ({ ws, req, wss }) => {
   const userId = createUserId();
+  const scope = container.createScope();
 
-  console.log('Client connected:', userId);
+  container.resolve('clients').set(userId, ws);
 
-  clients.set(userId, ws);
+  scope.register({
+    userId: asValue(userId),
+    ws: asValue(ws),
+    wss: asValue(wss),
+  });
 
-  ws.on('message', handleWsMessage({ userId, pub, ws, wss }));
-  ws.on('close', () => handleWsDisconnect({ userId }));
+  ws.container = scope;
+
+  ws.on('message', handleWsMessage(scope));
+  ws.on('close', () => handleWsDisconnect(scope));
 });
 
-sub.subscribe('client:bus', handleOnClientMessage({ clients }));
+const { sub } = container.cradle;
 
-await setupEchoServerConnection({ pub, sub });
+sub.subscribe('client:bus', handleOnClientMessage(container));
+
+await setupEchoServerConnection(container);
 
 server.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
