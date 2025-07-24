@@ -4,38 +4,68 @@ import http from 'http';
 import dotenv from 'dotenv';
 import { asValue } from 'awilix';
 import { createWsApp } from './src/services/ws.service.mjs';
-import { createUserId } from './src/services/user.service.mjs';
 import { shutdown } from './src/utils/shutdown.mjs';
 import { container } from './src/container.mjs';
 import { CLIENT_CHANNEL } from './src/constants.mjs';
+import path from 'path';
+import session from 'express-session';
+import { routes } from './src/routes.mjs';
 
 dotenv.config();
 
+const __dirname = path.resolve();
+const PORT = process.env.PORT || 3000;
 const app = express();
 const server = http.createServer(app);
-const PORT = process.env.PORT || 3000;
 
-app.use(express.static('public'));
+const sessionParser = session({
+  saveUninitialized: true,
+  secret: process.env.SESSION_SECRET ?? 'secret',
+  resave: true,
+});
+
+// views config
+app.set('views', path.join(__dirname, './src/views'));
+app.set('view engine', 'ejs');
+
+// body parser and session middleware
+app.use(sessionParser);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use('/', routes);
 
 const wss = createWsApp(server, ({ ws, req, wss }) => {
-  const userId = createUserId();
   const scope = container.createScope();
 
-  container.resolve('clients').set(userId, ws);
+  // @ts-ignore
+  sessionParser(req, {}, () => {
+    const userId = req.session.userId;
 
-  scope.register({
-    userId: asValue(userId),
-    ws: asValue(ws),
-    wss: asValue(wss),
+    if (!userId) {
+      console.log('Unauthorized WebSocket connection attempt');
+      ws.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      ws.destroy();
+      return;
+    }
+
+    console.log(`Client connected with userId: ${userId}`);
+
+    container.resolve('clients').set(userId, ws);
+
+    scope.register({
+      userId: asValue(userId),
+      ws: asValue(ws),
+      wss: asValue(wss),
+    });
+
+    ws.container = scope;
+
+    const handleWsMessage = scope.resolve('handleWsMessage');
+    const handleWsDisconnect = scope.resolve('handleWsDisconnect');
+
+    ws.on('message', handleWsMessage);
+    ws.on('close', handleWsDisconnect);
   });
-
-  ws.container = scope;
-
-  const handleWsMessage = scope.resolve('handleWsMessage');
-  const handleWsDisconnect = scope.resolve('handleWsDisconnect');
-
-  ws.on('message', handleWsMessage);
-  ws.on('close', handleWsDisconnect);
 });
 
 const { sub, handleOnClientMessage, setupEchoServerConnection } = container.cradle;

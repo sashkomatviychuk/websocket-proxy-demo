@@ -16,12 +16,15 @@
   "dependencies": {
     "awilix": "^12.0.5",
     "dotenv": "^17.2.0",
+    "ejs": "^3.1.10",
     "express": "^5.1.0",
+    "express-session": "^1.18.2",
     "redis": "^5.6.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
+    "@types/express-session": "^1.18.2",
     "@types/ws": "^8.18.1"
   }
 }
