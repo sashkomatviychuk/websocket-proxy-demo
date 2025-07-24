@@ -1,14 +1,15 @@
 // @ts-check
-import express from 'express';
 import http from 'http';
+import path from 'path';
+import express from 'express';
 import dotenv from 'dotenv';
 import { asValue } from 'awilix';
+import session from 'express-session';
+
 import { createWsApp } from './src/services/ws.service.mjs';
 import { shutdown } from './src/utils/shutdown.mjs';
 import { container } from './src/container.mjs';
 import { CLIENT_CHANNEL } from './src/constants.mjs';
-import path from 'path';
-import session from 'express-session';
 import { routes } from './src/routes.mjs';
 
 dotenv.config();

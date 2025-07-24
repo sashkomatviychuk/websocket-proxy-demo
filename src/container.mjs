@@ -2,7 +2,11 @@
 import { createContainer, asValue, asFunction } from 'awilix';
 
 import { pub, sub } from './services/pubsub.service.mjs';
-import { handleWsMessage, handleWsDisconnect, handleOnClientMessage } from './services/ws.service.mjs';
+import {
+  handleWsMessage,
+  handleWsDisconnect,
+  handleOnClientMessage,
+} from './services/ws.service.mjs';
 import { setupEchoServerConnection } from './services/echo.service.mjs';
 
 export const container = createContainer();

@@ -4,7 +4,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.mjs",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "lint": "eslint .",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare": "husky"
   },
   "repository": {
     "type": "git",
@@ -25,6 +27,20 @@
   "devDependencies": {
     "@types/express": "^5.0.3",
     "@types/express-session": "^1.18.2",
-    "@types/ws": "^8.18.1"
+    "@types/ws": "^8.18.1",
+    "eslint": "^9.31.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-define-config": "^2.1.0",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-prettier": "^5.5.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.2",
+    "prettier": "^3.6.2"
+  },
+  "lint-staged": {
+    "**/*.{js,mjs}": [
+      "eslint --fix",
+      "eslint"
+    ]
   }
 }
